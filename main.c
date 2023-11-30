@@ -261,6 +261,23 @@ void run_program(prog p) {
   }
 }
 
+// returns true if execution should continue
+bool step_program(prog *p) {
+  instr_t ins = p->instr[p->pc++];
+  switch(ins.op) {
+  case OP_STP: { return false; }
+  case OP_ADD: { p->acc += p->instr[ins.data].data; break; }
+  case OP_SUB: { p->acc -= p->instr[ins.data].data; break; }
+  case OP_LDA: { p->acc = p->instr[ins.data].data;  break; }
+  case OP_STO: { p->instr[ins.data].data = p->acc;  break; }
+  case OP_JMP: { p->pc = ins.data; break; }
+  case OP_JGE: { p->pc = (p->acc > 0) ? ins.data : p->pc; break; }
+  case OP_JNE: { p->pc = (p->acc != 0) ? ins.data : p->pc; break; }
+  }
+  printf("%d\n", p->acc);
+  return true;
+}
+
 int main(void) {
   sb eg = read_entire_file("example.s");
 
@@ -281,23 +298,17 @@ int main(void) {
 
   prog p = create_program(toks);
 
-  run_program(p);
-  
-  for (size_t i = 0; i < p.count; ++i) {
-    printf("%d: %d\n", p.instr[i].op, p.instr[i].data);
-  }
-  
-  /*
-  InitWindow(800, 600, "Hello World");
+  InitWindow(800, 600, "MU0 Interpreter");
   SetTargetFPS(60);
   GuiLoadStyleDefault();
 
   bool show_ui = true;
   
   while(!WindowShouldClose()) {
+    if(!step_program(&p)) break;
     BeginDrawing();
     {
-      ClearBackground(WHITE);
+      ClearBackground(RAYWHITE);
       if (show_ui) {
 	show_ui = !GuiWindowBox((Rectangle) {10, 10, 50, 100},"A");
       }
@@ -305,6 +316,6 @@ int main(void) {
     EndDrawing();
   }
   CloseWindow();
-  */
+  
   return 0;  
 }
