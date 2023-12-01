@@ -42,6 +42,7 @@ sb read_entire_file(const char *filepath) {
 }
 
 typedef enum {
+  OP_NON,
   OP_ADD,
   OP_SUB,
   OP_LDA,
@@ -51,6 +52,18 @@ typedef enum {
   OP_JNE,
   OP_STP
 } op_type;
+
+const char *op_strs[] = {
+  [OP_NON] = "NOP",
+  [OP_ADD] = "ADD",
+  [OP_SUB] = "SUB",
+  [OP_LDA] = "LDA",
+  [OP_STO] = "STO",
+  [OP_JMP] = "JMP",
+  [OP_JGE] = "JGE",
+  [OP_JNE] = "JNE",
+  [OP_STP] = "STP"
+};
 
 typedef struct {
   bool is_data;
@@ -91,7 +104,7 @@ tok_t get_next_token(sv *prog) {
     // stp doesnt take any data (all other instructions do)
     if (strncmp(tok.data, "STP", 3) == 0) {
       return (tok_t) {.op = OP_STP};
-    } 
+    }
     sv val = chop_word(prog);
     if        (strncmp(tok.data, "ADD", 3) == 0) {
       return (tok_t) {.op = OP_ADD, .val=val};
@@ -107,10 +120,10 @@ tok_t get_next_token(sv *prog) {
       return (tok_t) {.op = OP_JGE, .val=val};
     } else if (strncmp(tok.data, "JNE", 3) == 0) {
       return (tok_t) {.op = OP_JNE, .val=val};
-    }  else {
-      printf("Invalid OPERATION\n");
-      exit(1);
     }
+    // need to restore val
+    prog->data -= val.len;
+    prog->len += val.len;
   }
   if (tok.len == 4 && strncmp(tok.data, "DEFW", 4) == 0) {
     chop_whitespace(prog);
@@ -132,6 +145,7 @@ void print_tok(tok_t tok) {
     return;
   }
   switch(tok.op) {
+  case OP_NON: break;
   case OP_ADD: {
     printf("%.*s: ADD(%.*s)\n", tok.label.len, tok.label.data, tok.val.len, tok.val.data);
     break;
@@ -200,7 +214,7 @@ typedef struct {
 
 // returns -1 for not found
 int get_index_of_label(tokens toks, sv label) {
-  for (size_t i = 0; i < toks.len; ++i) {
+  for (size_t i = 0; i < toks.len; i++) {
     if (toks.toks[i].label.len == label.len) {
       if (strncmp(toks.toks[i].label.data, label.data, label.len) == 0) {
 	return i;
@@ -214,6 +228,10 @@ int get_index_of_label(tokens toks, sv label) {
 int sv_to_dec(sv s) {
   int res = 0;
   for (size_t i = 0; i < (size_t)s.len; ++i) {
+    if (s.data[i] - '0' > 9 || s.data[i] - '0' < 0) {
+      printf("BAD NUMERIC STRING: %.*s\n", s.len, s.data);
+      exit(1);
+    }
     res = res * 10 + s.data[i] - '0';
   }
   return res;
@@ -231,8 +249,9 @@ prog create_program(tokens toks) {
     tok = toks.toks[i];
     instr.op = tok.op;
     // try label lookup
-    if (get_index_of_label(toks, tok.val) > 0) {
-      instr.data = get_index_of_label(toks, tok.val);
+    int j;
+    if ((j = get_index_of_label(toks, tok.val)) >= 0) {
+      instr.data = j;
     } else {
       // otherwise store the value directly
       instr.data = sv_to_dec(tok.val);
@@ -256,6 +275,7 @@ void run_program(prog p) {
     case OP_JMP: { p.pc = ins.data; break; }
     case OP_JGE: { p.pc = (p.acc > 0) ? ins.data : p.pc; break; }
     case OP_JNE: { p.pc = (p.acc != 0) ? ins.data : p.pc; break; }
+    default: break;
     }
     printf("%d\n", p.acc);
   }
@@ -273,31 +293,38 @@ bool step_program(prog *p) {
   case OP_JMP: { p->pc = ins.data; break; }
   case OP_JGE: { p->pc = (p->acc > 0) ? ins.data : p->pc; break; }
   case OP_JNE: { p->pc = (p->acc != 0) ? ins.data : p->pc; break; }
+  default: break;
   }
   printf("%d\n", p->acc);
   return true;
 }
 
-void display_program(prog p) {
-  char acc_txt[64], pc_txt[64];
-  snprintf(acc_txt, 64, "Acc: %d", p.acc);
+void display_program(tokens toks, prog p) {
+  char txt[64];
+  snprintf(txt, 64, "Acc: %d", p.acc);
   Rectangle br = {400, 100, 100, 25};
-  GuiButton(br, acc_txt);
-  snprintf(pc_txt, 64, "PC: %d", p.pc);
+  GuiButton(br, txt);
+  snprintf(txt, 64, "PC: %d", p.pc);
   br.y += 40;
-  GuiButton(br, pc_txt);
+  GuiButton(br, txt);
   br.x += 120;
   br.y = 100;
-  GuiLabel(br, "Memory");
+  GuiLabel(br, "Memory (loc : Mnemonic : value)");
   for (size_t i = 0; i < p.count; ++i) {
     br.y += 25;
-    snprintf(acc_txt, 64, "%d: %d", i, p.instr[i].data);
-    GuiButton(br, acc_txt);
+    snprintf(txt, 64, "%s %.*s %ld : %s : %d",
+	     (i == (size_t)p.pc) ? "!" : "",
+	     toks.toks[i].label.len,
+	     toks.toks[i].label.data,
+	     i,
+	     op_strs[toks.toks[i].op],
+	     p.instr[i].data);
+    GuiButton(br, txt);
   }
 }
 
 int main(void) {
-  sb eg = read_entire_file("example.s");
+  sb eg = read_entire_file("example2.s");
 
   sv program = {.data = eg.data, .len = eg.len};
   tokens toks = {
@@ -338,7 +365,7 @@ int main(void) {
     BeginDrawing();
     {
       ClearBackground(BLACK);
-      display_program(p);
+      display_program(toks, p);
       should_step = GuiButton(button_rect, "Step");
 
     }
