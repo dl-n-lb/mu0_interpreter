@@ -213,7 +213,7 @@ int get_index_of_label(tokens toks, sv label) {
 // currently only handles decimals.. we will see
 int sv_to_dec(sv s) {
   int res = 0;
-  for (size_t i = 0; i < s.len; ++i) {
+  for (size_t i = 0; i < (size_t)s.len; ++i) {
     res = res * 10 + s.data[i] - '0';
   }
   return res;
@@ -278,6 +278,24 @@ bool step_program(prog *p) {
   return true;
 }
 
+void display_program(prog p) {
+  char acc_txt[64], pc_txt[64];
+  snprintf(acc_txt, 64, "Acc: %d", p.acc);
+  Rectangle br = {400, 100, 100, 25};
+  GuiButton(br, acc_txt);
+  snprintf(pc_txt, 64, "PC: %d", p.pc);
+  br.y += 40;
+  GuiButton(br, pc_txt);
+  br.x += 120;
+  br.y = 100;
+  GuiLabel(br, "Memory");
+  for (size_t i = 0; i < p.count; ++i) {
+    br.y += 25;
+    snprintf(acc_txt, 64, "%d: %d", i, p.instr[i].data);
+    GuiButton(br, acc_txt);
+  }
+}
+
 int main(void) {
   sb eg = read_entire_file("example.s");
 
@@ -302,18 +320,31 @@ int main(void) {
   SetTargetFPS(60);
   GuiLoadStyleDefault();
 
-  bool show_ui = true;
+  bool should_step = true;
+
+  int button_x = 50;
+  int button_y = 100;
+  const int button_width = 100;
+  const int button_height = 30;
   
   while(!WindowShouldClose()) {
-    if(!step_program(&p)) break;
+    Rectangle button_rect = {
+      button_x,
+      button_y,
+      button_width,
+      button_height,
+    };
+
     BeginDrawing();
     {
-      ClearBackground(RAYWHITE);
-      if (show_ui) {
-	show_ui = !GuiWindowBox((Rectangle) {10, 10, 50, 100},"A");
-      }
+      ClearBackground(BLACK);
+      display_program(p);
+      should_step = GuiButton(button_rect, "Step");
+
     }
     EndDrawing();
+
+    if(should_step && !step_program(&p)) break;
   }
   CloseWindow();
   
